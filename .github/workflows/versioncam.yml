@@ -1,73 +1,61 @@
-name: versioncam
-
-# WP20's spike: record against the commit's own Vercel deployment, found by
-# hand through GitHub's Deployments API. The Action's `deployment` input
-# replaces the "Wait for" step once it exists.
+name: Versioncam
 
 on:
   pull_request:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-  deployments: read
-  pull-requests: write
-
 jobs:
+  # On a pull request: record every clip against its Preview deployment, and fail with a comment if one broke.
   check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read # to find the pull request's deployment
+      statuses: read # to tell you when Vercel deployed but made no GitHub deployment
+      pull-requests: write # to comment when a clip breaks
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Wait for this commit's deployment
-        id: deployment
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          WANT: ${{ github.event_name == 'pull_request' && 'Preview' || 'Production' }}
-        run: |
-          start=$(date +%s)
-          for i in $(seq 1 60); do
-            echo "--- $(( $(date +%s) - start ))s: deployments for $SHA"
-            gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$SHA" \
-              --jq '.[] | "\(.id) env=\(.environment) creator=\(.creator.login) created=\(.created_at) transient=\(.transient_environment) production=\(.production_environment)"'
-            id=$(gh api "repos/$GITHUB_REPOSITORY/deployments?sha=$SHA" \
-              --jq "[.[] | select(.environment | startswith(\"$WANT\"))][0].id // empty")
-            if [ -n "$id" ]; then
-              gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
-                --jq '.[] | "  status \(.state) at=\(.created_at) environment_url=\(.environment_url) target_url=\(.target_url) log_url=\(.log_url)"'
-              state=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" --jq '.[0].state // empty')
-              if [ "$state" = "success" ]; then
-                url=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
-                  --jq '.[0] | (.environment_url // "") as $e | if $e != "" then $e else .target_url end')
-                echo "url=$url" >> "$GITHUB_OUTPUT"
-                echo "Deployment $id is ready after $(( $(date +%s) - start ))s: $url"
-                exit 0
-              fi
-              if [ "$state" = "failure" ] || [ "$state" = "error" ]; then
-                echo "::error::The $WANT deployment failed."
-                exit 1
-              fi
-            fi
-            sleep 15
-          done
-          echo "::error::No $WANT deployment succeeded for $SHA within 15 minutes."
-          exit 1
-
+          ref: ${{ github.event.pull_request.head.sha }} # the commit your host deployed
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-
-      - uses: versioncam/action@v1
+      - uses: versioncam/action@deployment # WP20: the deployment input, before v1.2.0
         with:
-          mode: check
-          url: ${{ steps.deployment.outputs.url }}
+          deployment: Preview
         env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          RECORDING_USER: ${{ secrets.RECORDING_USER }}
           RECORDING_PASS: ${{ secrets.RECORDING_PASS }}
+          RECORDING_USER: ${{ secrets.RECORDING_USER }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+  # On main: record every clip against the Production deployment, then publish the recordings to version.cam.
+  publish:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read # to find the commit's deployment
+      statuses: read # to tell you when Vercel deployed but made no GitHub deployment
+      id-token: write # GitHub's token for version.cam, so no secret is stored
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: versioncam/action@deployment # WP20: the deployment input, before v1.2.0
+        with:
+          deployment: Production
+        env:
+          RECORDING_PASS: ${{ secrets.RECORDING_PASS }}
+          RECORDING_USER: ${{ secrets.RECORDING_USER }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - uses: versioncam/action@deployment # WP20: the deployment input, before v1.2.0
+        if: ${{ !cancelled() }} # a clip that broke is published as broken
+        with:
+          mode: publish
