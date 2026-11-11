@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - uses: versioncam/action@v1.2.0
+      - uses: versioncam/action@v1
         with:
           deployment: Preview
         env:
@@ -48,14 +48,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - uses: versioncam/action@v1.2.0
+      - uses: versioncam/action@v1
         with:
           deployment: Production
         env:
           RECORDING_PASS: ${{ secrets.RECORDING_PASS }}
           RECORDING_USER: ${{ secrets.RECORDING_USER }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-      - uses: versioncam/action@v1.2.0
+      - uses: versioncam/action@v1
         if: ${{ !cancelled() }} # a clip that broke is published as broken
         with:
           mode: publish
