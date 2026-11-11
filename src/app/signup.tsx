@@ -31,7 +31,7 @@ export default function Signup() {
         type="submit"
         className="h-12 rounded-full bg-foreground px-5 text-background"
       >
-        Save
+        Say hello
       </button>
       {greeting !== null && (
         <p data-testid="result" className="self-center text-lg">
