@@ -26,13 +26,6 @@ export default function Signup() {
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
-      <button
-        data-testid="save"
-        type="submit"
-        className="h-12 rounded-full bg-foreground px-5 text-background"
-      >
-        Save
-      </button>
       {greeting !== null && (
         <p data-testid="result" className="self-center text-lg">
           {greeting.message}{" "}
